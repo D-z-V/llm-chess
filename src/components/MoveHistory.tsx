@@ -1,4 +1,3 @@
-// src/components/MoveHistory.tsx
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
 

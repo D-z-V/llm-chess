@@ -44,6 +44,7 @@ const Game: React.FC = () => {
     [resetGame, navigate, playerWhite, playerBlack]
   );
 
+  // Update handlePieceDrop to call onMove synchronously.
   const handlePieceDrop = (sourceSquare: string, targetSquare: string): boolean => {
     const result = onMove(sourceSquare, targetSquare);
     if (!result) {
