@@ -1,4 +1,3 @@
-// src/pages/Game.tsx
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Box, Grid, Button, Typography, Snackbar, Alert } from '@mui/material';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';

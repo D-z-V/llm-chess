@@ -40,14 +40,6 @@ const removeSavedGame = (gameId: string) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(games));
 };
 
-interface UseGameLogicProps {
-  mode: string | undefined;
-  startTimers: boolean;
-  resumeGameId?: string;
-  players?: { playerWhite: string; playerBlack: string };
-  llmOptions?: { provider: string; apiKey?: string };
-}
-
 const useGameLogic = (
   mode: string | undefined,
   startTimers: boolean,
@@ -218,7 +210,6 @@ const useGameLogic = (
     }
 
     else {
-      // Handle human vs human mode
       move = ChessService.getGame().move({
         from: sourceSquare,
         to: targetSquare,
