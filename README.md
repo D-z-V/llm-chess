@@ -2,6 +2,8 @@
 
 ## Deployment Link
 
+https://llm-chess-olive.vercel.app/
+
 ## Running it locally
 
 ```
