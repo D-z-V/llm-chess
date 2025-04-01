@@ -1,5 +1,4 @@
-// src/hooks/useGameLogic.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ChessService from '../services/ChessService';
 import LLMService from '../services/LLMService';
 
@@ -47,7 +46,10 @@ const useGameLogic = (
   players?: { playerWhite: string; playerBlack: string },
   llmOptions?: { provider: string; apiKey?: string }
 ) => {
-  const [gameId, setGameId] = useState<string>(() => {
+  // Use a ref flag to ensure the reset runs only once.
+  const initialResetDone = useRef(false);
+
+  const [gameId, _] = useState<string>(() => {
     if (resumeGameId) return resumeGameId;
     return Date.now().toString();
   });
@@ -84,7 +86,7 @@ const useGameLogic = (
           playerWhite: savedGame.playerWhite, 
           playerBlack: savedGame.playerBlack 
         });
-        // Restore LLM options from saved game
+        // Restore LLM options from saved game if available.
         if (savedGame.llmProvider) {
           llmOptions = {
             provider: savedGame.llmProvider,
@@ -122,6 +124,15 @@ const useGameLogic = (
     }
   }, [gameId, mode, playerNames, startDate, llmOptions]);
 
+  // Reset game immediately for new games only once.
+  useEffect(() => {
+    if (!resumeGameId && !initialResetDone.current) {
+      ChessService.reset();
+      updateGameState();
+      initialResetDone.current = true;
+    }
+  }, [resumeGameId, updateGameState]);
+
   const triggerLLMMove = useCallback(async () => {
     try {
       const provider = llmOptions?.provider || 'Google Gemini';
@@ -133,20 +144,30 @@ const useGameLogic = (
       }
       
       const fen = ChessService.getFEN();
-  
       let response = await LLMService.getMove(provider, key, fen);
+      
+      if (!response || !response.move) {
+        console.error('LLMService did not return a valid response.');
+        return;
+      }
+      
       let move;
       let attempts = 0;
-  
+      
       while (attempts < 10) {
         try {
+          // Guard against undefined response.move
+          if (!response.move) {
+            console.error('LLMService response move is undefined.');
+            return;
+          }
           move = ChessService.getGame().move({
             from: response.move.slice(0, 2),
             to: response.move.slice(2, 4),
             promotion: 'q'
           });
   
-          if (move) break; // If move is successful, exit loop
+          if (move) break; // Exit loop if move succeeded.
         } catch (error) {
           console.error(`LLM returned an invalid move (Attempt ${attempts + 1}):`, response.move, error);
         }
@@ -155,6 +176,10 @@ const useGameLogic = (
         if (attempts < 10) {
           console.log(`Requesting correction from LLM (Attempt ${attempts + 1})...`);
           response = await LLMService.getMove(provider, key, fen, true, response.move);
+          if (!response || !response.move) {
+            console.error('LLMService did not return a valid response during correction.');
+            return;
+          }
         }
       }
   
@@ -168,61 +193,30 @@ const useGameLogic = (
       console.error('Error from LLMService:', error);
     }
   }, [updateGameState, llmOptions]);
-  
-  const onMove = useCallback(
-    async (sourceSquare: string, targetSquare: string): Promise<boolean> => {
-      let move;
-      let attempts = 0;
-      
-      if (mode === 'llm') {
-        while (attempts < 10) {
-          try {
-            move = ChessService.getGame().move({ from: sourceSquare, to: targetSquare, promotion: 'q' });
-    
-            if (move) break; // If move is valid, exit loop
-          } catch (error) {
-            console.error(`Invalid move by user (Attempt ${attempts + 1}):`, error);
-          }
-    
-          attempts++;
-          if (attempts < 10) {
-            try {
-              const provider = llmOptions?.provider || 'Google Gemini';
-              const key = llmOptions?.apiKey || '';
-              const fen = ChessService.getFEN();
-    
-              console.log(`Requesting correction from LLM (Attempt ${attempts + 1})...`);
-              const feedback_response = await LLMService.getMove(provider, key, fen, true, `${sourceSquare}${targetSquare}`);
-    
-              sourceSquare = feedback_response.move.slice(0, 2);
-              targetSquare = feedback_response.move.slice(2, 4);
-            } catch (llmError) {
-              console.error(`LLM correction failed (Attempt ${attempts + 1}):`, llmError);
-              return false;
-            }
-          }
-        }
-  
-      if (!move) {
-        console.error('Move failed after 10 attempts.');
-        return false;
-      }
-    }
 
-    else {
-      move = ChessService.getGame().move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: 'q',
-      });
-    
-      if (!move) {
-        console.error('Invalid move');
+  // onMove is synchronous so it returns a boolean immediately.
+  const onMove = useCallback(
+    (sourceSquare: string, targetSquare: string): boolean => {
+      let move;
+      try {
+        move = ChessService.getGame().move({
+          from: sourceSquare,
+          to: targetSquare,
+          promotion: 'q',
+        });
+      } catch (error) {
+        console.error('Invalid move attempted:', error);
         return false;
       }
-    }
+  
+      if (!move) {
+        console.error('Invalid move attempted.');
+        return false;
+      }
+  
       updateGameState();
   
+      // In LLM mode, after a valid user move, let the LLM move after a short delay.
       if (mode === 'llm' && !ChessService.getGame().isGameOver()) {
         setTimeout(() => {
           triggerLLMMove();
@@ -231,9 +225,8 @@ const useGameLogic = (
   
       return true;
     },
-    [mode, updateGameState, triggerLLMMove, llmOptions]
+    [mode, updateGameState, triggerLLMMove]
   );
-  
 
   const resetGame = useCallback(() => {
     ChessService.reset();

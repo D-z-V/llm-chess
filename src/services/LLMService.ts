@@ -1,4 +1,3 @@
-// src/services/LLMService.ts
 export interface LLMResponse {
   move: string;
 }
@@ -18,7 +17,6 @@ class LLMService {
 
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
-      // Adjust the prompt dynamically based on feedback
       let prompt = `
         Analyze the chess position given in the FEN string: "${fen}". 
         Suggest a valid chess move in Universal Chess Interface (UCI) format (e.g., 'e2e4', 'g8f6'). 
@@ -68,7 +66,7 @@ class LLMService {
 
       return { move: moveMatch[1] };
     } else {
-      // For other providers, use the provided API key.
+
       let endpoint = '';
       switch (provider) {
         case 'OpenAI GPT':

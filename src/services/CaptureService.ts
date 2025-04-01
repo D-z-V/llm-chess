@@ -1,4 +1,3 @@
-// src/services/CaptureService.ts
 import { Chess } from 'chess.js';
 
 const unicodeMapping: Record<string, { w: string; b: string }> = {
