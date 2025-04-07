@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Box, Grid, Button, Typography, Snackbar, Alert } from '@mui/material';
+import { Box, Button, Typography, Snackbar, Alert } from '@mui/material';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Chessboard from '../components/Chessboard';
 import MoveHistory from '../components/MoveHistory';
@@ -7,44 +7,71 @@ import TimerPanel from '../components/TimerPanel';
 import useGameLogic from '../hooks/useGameLogic';
 import { getCapturedPieces } from '../services/CaptureService';
 import ChessService from '../services/ChessService';
+import ThinkingThread from '../components/ThinkingThread';
 
 const Game: React.FC = () => {
-  const { mode } = useParams<{ mode: string }>(); // 'human' or 'llm'
+  const { mode } = useParams<{ mode: string }>();
   const [searchParams] = useSearchParams();
   const resumeGameId = searchParams.get('resume') || undefined;
   const playerWhite = searchParams.get('playerWhite') || '';
   const playerBlack = searchParams.get('playerBlack') || (mode === 'llm' ? 'LLM' : '');
-  // Retrieve LLM provider and API key (if applicable) from query params.
   const llmProvider = searchParams.get('llmProvider') || 'Google Gemini';
   const apiKey = searchParams.get('apiKey') || '';
-  const navigate = useNavigate();
+  const thinkingMode = searchParams.get('thinkingMode') === 'true';
+  const llmProvider2 = searchParams.get('llmProvider2') || '';
+  const apiKey2 = searchParams.get('apiKey2') || '';
 
-  // In LLM mode, assume settings provided via home modal, so LLM is initialized.
+  const navigate = useNavigate();
   const [llmInitialized] = useState(true);
   const [illegalMoveToastOpen, setIllegalMoveToastOpen] = useState<boolean>(false);
   const [llmMoveToastOpen, setLlmMoveToastOpen] = useState<boolean>(false);
 
-  const { position, moveHistory, gameStatus, currentTurn, onMove, resetGame } = useGameLogic(
+  useEffect(() => {
+    console.log("Initializing game with thinking mode:", thinkingMode);
+  }, [thinkingMode]);
+
+  const {
+    position,
+    moveHistory,
+    gameStatus,
+    currentTurn,
+    onMove,
+    resetGame,
+    thinkingConversation,
+    isThinkingModeEnabled
+  } = useGameLogic(
     mode,
     llmInitialized,
     resumeGameId,
     { playerWhite, playerBlack },
-    { provider: llmProvider, apiKey: apiKey }
+    {
+      provider: llmProvider,
+      apiKey,
+      thinkingMode,
+      provider2: llmProvider2,
+      apiKey2
+    }
   );
 
-  // Compute captured pieces using moveHistory as dependency.
   const { lostWhite, lostBlack } = useMemo(() => getCapturedPieces(ChessService.getGame()), [moveHistory]);
+
+  const handlePauseAndSave = useCallback(() => {
+    navigate(`/?thinkingMode=${isThinkingModeEnabled}`);
+  }, [navigate, isThinkingModeEnabled]);
+
+  const handleEndGame = useCallback(() => {
+    resetGame();
+    navigate(`/?thinkingMode=${isThinkingModeEnabled}`);
+  }, [resetGame, navigate, isThinkingModeEnabled]);
 
   const handleTimeUp = useCallback(
     (player: 'w' | 'b') => {
       alert(`${player === 'w' ? playerWhite : playerBlack} time up!`);
-      resetGame();
-      navigate('/');
+      handleEndGame();
     },
-    [resetGame, navigate, playerWhite, playerBlack]
+    [handleEndGame, playerWhite, playerBlack]
   );
 
-  // Update handlePieceDrop to call onMove synchronously.
   const handlePieceDrop = (sourceSquare: string, targetSquare: string): boolean => {
     const result = onMove(sourceSquare, targetSquare);
     if (!result) {
@@ -53,16 +80,6 @@ const Game: React.FC = () => {
     return result;
   };
 
-  const handlePauseAndSave = useCallback(() => {
-    navigate('/');
-  }, [navigate]);
-
-  const handleEndGame = useCallback(() => {
-    resetGame();
-    navigate('/');
-  }, [resetGame, navigate]);
-
-  // Handle browser back navigation like Pause & Save.
   useEffect(() => {
     const handlePopState = () => {
       handlePauseAndSave();
@@ -71,15 +88,15 @@ const Game: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [handlePauseAndSave]);
 
-  // Determine last move icon: alternating icons for white/black.
   const lastMoveIcon = moveHistory.length % 2 === 0 ? '♚' : '♔';
 
-  // Show LLM move toast when in LLM mode and it's now human's turn.
   useEffect(() => {
     if (mode === 'llm' && currentTurn === 'w' && moveHistory.length > 0) {
       setLlmMoveToastOpen(true);
     }
   }, [mode, currentTurn, moveHistory]);
+
+  const debugInfo = mode === 'llm' ? `Thinking Mode: ${isThinkingModeEnabled ? 'ON' : 'OFF'}` : '';
 
   return (
     <Box padding={2} bgcolor="#121212" minHeight="100vh">
@@ -91,11 +108,19 @@ const Game: React.FC = () => {
           End Game
         </Button>
       </Box>
+
       <Typography variant="h4" align="center" color="white" gutterBottom>
         {gameStatus} - {currentTurn === 'w' ? `${playerWhite}'s Turn` : `${playerBlack}'s Turn`}
       </Typography>
-      <Grid container spacing={2} display="flex" justifyContent="center">
-        <Grid item xs={12} md={8}>
+
+      {debugInfo && (
+        <Typography variant="subtitle2" align="center" color="primary" gutterBottom>
+          {debugInfo}
+        </Typography>
+      )}
+
+      <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} gap={2} mt={2}>
+        <Box flex={isThinkingModeEnabled ? 0.65 : 1} minWidth={0}>
           <Box display="flex" flexDirection="column" alignItems="center">
             {moveHistory.length > 0 && (
               <Typography variant="subtitle1" color="primary">
@@ -114,8 +139,21 @@ const Game: React.FC = () => {
             capturedWhite={lostWhite}
             capturedBlack={lostBlack}
           />
-        </Grid>
-      </Grid>
+        </Box>
+        {isThinkingModeEnabled && (
+          <Box
+            flex={0.35}
+            minWidth={300}
+            ml={{ xs: 0, md: 2 }}
+            mr={{ xs: 0, md: 4 }}
+            sx={{ alignSelf: 'flex-start' }}
+          >
+            <ThinkingThread conversation={thinkingConversation} />
+          </Box>
+
+        )}
+      </Box>
+
       <Snackbar
         open={illegalMoveToastOpen}
         autoHideDuration={3000}
@@ -126,6 +164,7 @@ const Game: React.FC = () => {
           Illegal move attempted!
         </Alert>
       </Snackbar>
+
       <Snackbar
         open={llmMoveToastOpen}
         autoHideDuration={3000}
